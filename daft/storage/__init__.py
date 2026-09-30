@@ -20,6 +20,7 @@ in :mod:`daft.storage.negotiation`. Pushdown is negotiated, never assumed: a sou
 operators it did *not* absorb so the engine can re-evaluate them.
 """
 
+from daft.storage.conformance import assert_conformance, check_provider, check_providers
 from daft.storage.contracts import (
     ApiLevel,
     CatalogSink,
@@ -134,6 +135,9 @@ __all__ = [
     "UnsupportedOperationError",
     "WriteProtocol",
     "accounts_for_all",
+    "assert_conformance",
+    "check_provider",
+    "check_providers",
     "describe_registry",
     "describe_source",
     "describe_uri",
