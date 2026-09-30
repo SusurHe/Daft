@@ -173,6 +173,8 @@ from daft import io
 from daft import runners
 from daft import datasets
 from daft import functions
+from daft import storage
+from daft.storage import open_uri as open
 
 
 # Lance is lazy-loaded to keep `import daft` fast.
@@ -277,6 +279,7 @@ __all__ = [
     "load_extension",
     "method",
     "metrics",
+    "open",
     "open_file",
     "planning_config_ctx",
     "range",
@@ -314,6 +317,7 @@ __all__ = [
     "set_session",
     "sql",
     "sql_expr",
+    "storage",
     "udaf",
     "udf",
     "with_subscriber",
