@@ -99,15 +99,21 @@ def read_parquet(
     if isinstance(row_groups, list) and not isinstance(path, list):
         raise ValueError("row_groups are only supported when reading multiple non-globbed/wildcarded files")
 
-    file_format_config = FileFormatConfig.from_parquet_config(
-        ParquetSourceConfig(
-            coerce_int96_timestamp_unit=pytimeunit,
-            row_groups=row_groups,
-            chunk_size=_chunk_size,
-            ignore_corrupt_files=ignore_corrupt_files,
-        )
+    # The storage provider layer resolves which storage and which format participate and the format
+    # provider builds the reader configuration, so this mapping exists in exactly one place.
+    # Behaviour is unchanged: the same FileFormatConfig and StorageConfig are constructed as before.
+    from daft.storage.legacy import tabular_scan_configs
+
+    file_format_config, storage_config = tabular_scan_configs(
+        path,
+        format="parquet",
+        multithreaded_io=multithreaded_io,
+        io_config=io_config,
+        coerce_int96_timestamp_unit=pytimeunit,
+        row_groups=row_groups,
+        chunk_size=_chunk_size,
+        ignore_corrupt_files=ignore_corrupt_files,
     )
-    storage_config = StorageConfig(multithreaded_io, io_config)
 
     builder = get_tabular_files_scan(
         path=path,

@@ -186,6 +186,14 @@ class LocalFileSystemProvider:
     scan_options = OptionsContract(optional=(Option("io_config", doc="IO configuration for credentials"),))
     sink_options = OptionsContract(optional=(Option("io_config", doc="IO configuration for credentials"),))
 
+    def io_config(self, io_config: Any = None) -> Any:
+        """Return the IO configuration to use for this scheme.
+
+        Local paths accept the user supplied configuration unchanged; object store providers will
+        contribute defaults here once per-scheme configuration moves into the provider layer.
+        """
+        return io_config
+
 
 class RemoteFileSystemProvider:
     """Filesystem provider for object stores served by an existing Daft IO backend."""
@@ -201,6 +209,14 @@ class RemoteFileSystemProvider:
             capabilities=frozenset(),
             doc=doc,
         )
+
+    def io_config(self, io_config: Any = None) -> Any:
+        """Return the IO configuration to use for this scheme.
+
+        The credentials model is unchanged: whatever the user passed through ``io_config`` is used,
+        and per-scheme defaults can be layered in here later without touching the readers.
+        """
+        return io_config
 
 
 class ParquetFormatProvider:
@@ -240,6 +256,24 @@ class ParquetFormatProvider:
             Option("io_config", doc="IO configuration for remote storage"),
         )
     )
+
+    def legacy_file_format_config(self, options: Mapping[str, Any]) -> Any:
+        """Build the reader configuration for the existing file scan path.
+
+        Keeping this mapping in the provider gives the format a single source of truth: the reader
+        entry point only forwards its arguments, and both the capability declaration and the reader
+        configuration live next to each other.
+        """
+        from daft.daft import FileFormatConfig, ParquetSourceConfig
+
+        return FileFormatConfig.from_parquet_config(
+            ParquetSourceConfig(
+                coerce_int96_timestamp_unit=options.get("coerce_int96_timestamp_unit"),
+                row_groups=options.get("row_groups"),
+                chunk_size=options.get("chunk_size"),
+                ignore_corrupt_files=bool(options.get("ignore_corrupt_files", False)),
+            )
+        )
 
     def scan(self, uri: str, options: Mapping[str, Any]) -> ParquetScanSource:
         """Return a Parquet scan source."""
