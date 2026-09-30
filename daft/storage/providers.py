@@ -344,6 +344,18 @@ class LegacyDataSourceProvider:
         )
 
 
+def _register_database_providers() -> None:
+    """Register database backed providers.
+
+    Their modules avoid optional imports at import time, so registration never requires the database
+    driver to be installed; a missing driver surfaces as an actionable error when the provider is
+    actually used.
+    """
+    from daft.io.clickhouse.provider import ClickHouseProvider
+
+    register(ClickHouseProvider(), override=True)
+
+
 def register_builtin_providers() -> None:
     """Register every built-in provider.
 
@@ -358,3 +370,4 @@ def register_builtin_providers() -> None:
     register(ParquetFormatProvider(), override=True)
     register(CsvFormatProvider(), override=True)
     register(LegacyDataSourceProvider(), override=True)
+    _register_database_providers()

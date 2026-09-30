@@ -235,31 +235,38 @@ class ResolvedSource:
 
     Attributes:
         uri: The original URI.
-        format_name: Canonical format key.
-        storage_key: Filesystem scheme that was resolved.
+        format_name: Canonical format key, or ``None`` for database backed backends.
+        storage_key: Filesystem scheme that was resolved, or ``None`` for database backed backends.
         layers: Layers involved, bottom-up.
-        location: Resolved location.
+        location: Resolved location, or ``None`` when the backend owns its own files.
         location_source: Who supplied the location.
+        direct_provider: Name of a non file provider (database or table format) owning the URI.
         trace: Human readable resolution log.
     """
 
     uri: str
-    format_name: str
-    storage_key: str
+    format_name: str | None
+    storage_key: str | None
     layers: tuple[Layer, ...]
-    location: Location
+    location: Location | None
     location_source: LocationSource
+    direct_provider: str | None = None
     trace: tuple[str, ...] = ()
 
     @property
-    def storage(self) -> Any:
-        """The filesystem provider."""
-        return resolve_filesystem(self.storage_key)
+    def storage(self) -> Any | None:
+        """The filesystem provider, or ``None`` when no filesystem participates."""
+        return resolve_filesystem(self.storage_key) if self.storage_key else None
 
     @property
-    def format(self) -> Any:
-        """The file format provider."""
-        return resolve_format(self.format_name)
+    def format(self) -> Any | None:
+        """The file format provider, or ``None`` when no file format participates."""
+        return resolve_format(self.format_name) if self.format_name else None
+
+    @property
+    def direct(self) -> Any | None:
+        """The database or table format provider that owns this URI, if any."""
+        return get(self.direct_provider) if self.direct_provider else None
 
 
 def resolve_uri(uri: str, *, format: str | None = None) -> ResolvedSource:
@@ -281,7 +288,25 @@ def resolve_uri(uri: str, *, format: str | None = None) -> ResolvedSource:
         ProviderNotFoundError: If the scheme has no filesystem provider.
         AmbiguousFormatError: If the format cannot be inferred and was not given explicitly.
     """
+    ensure_builtins()
     scheme, path = parse_uri(uri)
+
+    # Database backed and table format backends terminate at the catalog layer: there is no file
+    # format to infer and no location to resolve, because the backend owns its own files.
+    for kind, layer in ((ProviderKind.DATABASE, Layer.CATALOG), (ProviderKind.TABLE_FORMAT, Layer.TABLE_FORMAT)):
+        provider = _REGISTRY.get((kind, scheme))
+        if provider is not None:
+            return ResolvedSource(
+                uri=uri,
+                format_name=None,
+                storage_key=None,
+                layers=(layer,),
+                location=None,
+                location_source=LocationSource.NONE,
+                direct_provider=provider.info.name,
+                trace=(f"catalog: {scheme!r} -> {provider.info.name} ({kind.value} backed, no file format)",),
+            )
+
     storage_key = "file" if scheme in LOCAL_SCHEMES else scheme
     storage_provider = resolve_filesystem(storage_key)
 

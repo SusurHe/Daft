@@ -74,8 +74,8 @@ def test_unknown_scheme_lists_registered_schemes():
 
 def test_known_dependency_hint_is_attached():
     with pytest.raises(ProviderNotFoundError) as error:
-        resolve_uri("clickhouse://host/db/table.parquet")
-    assert "pip install 'daft[clickhouse]'" in str(error.value)
+        resolve_uri("iceberg://host/db/table.parquet")
+    assert "pip install 'daft[iceberg]'" in str(error.value)
 
 
 def test_duplicate_registration_requires_override():
@@ -118,3 +118,14 @@ def test_reset_restores_builtins():
     assert registered() == [], "an explicit reset must not be undone by lazy loading"
     reset()
     assert {info.name for info in registered()} >= {"parquet", "csv", "local", "legacy-datasource"}
+
+
+def test_database_scheme_resolves_to_a_direct_provider():
+    from daft.storage import Layer, LocationSource, resolve_uri
+
+    resolved = resolve_uri("clickhouse://user:pass@host:8123/db/table")
+    assert resolved.direct_provider == "clickhouse"
+    assert resolved.layers == (Layer.CATALOG,)
+    assert resolved.location is None
+    assert resolved.location_source is LocationSource.NONE
+    assert resolved.format_name is None and resolved.storage_key is None

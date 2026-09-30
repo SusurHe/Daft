@@ -83,31 +83,51 @@ class StorageHandle:
         """Resolved storage location."""
         return self.resolved.location
 
-    def _operation_provider(self) -> Provider:
-        """Return the provider that hosts scan and sink for this URI.
+    def _candidate_providers(self) -> tuple[Any, ...]:
+        """Return the providers that may own this URI, most specific first.
 
-        For file based sources the format provider owns scan and sink while the filesystem provider
-        only carries credentials and transport, which matches how Daft reads files today.
+        Database backed URIs resolve to a single provider; file based URIs resolve to a format
+        provider (scan and sink) plus a filesystem provider (credentials and transport).
         """
+        return tuple(
+            provider
+            for provider in (self.resolved.direct, self.resolved.format, self.resolved.storage)
+            if provider is not None
+        )
+
+    def _provider_for(self, protocol: type) -> Any | None:
+        """Return the first candidate provider implementing a protocol."""
+        for candidate in self._candidate_providers():
+            if isinstance(candidate, protocol):
+                return candidate
+        return None
+
+    def _operation_provider(self) -> Provider:
+        """Return the provider that hosts scan and sink for this URI."""
         from daft.storage.contracts import SupportsScan, SupportsSink
 
-        candidates = (self.resolved.format, self.resolved.storage)
-        for candidate in candidates:
-            if isinstance(candidate, (SupportsScan, SupportsSink)):
-                return candidate
-        return self.resolved.format
+        provider = self._provider_for((SupportsScan, SupportsSink))
+        if provider is not None:
+            return provider
+        candidates = self._candidate_providers()
+        if not candidates:  # pragma: no cover - resolution always yields at least one provider
+            raise UnsupportedOperationError(
+                op="resolve",
+                provider=self.uri,
+                reason="no provider was resolved for this URI",
+                alternatives=["Check daft.storage.list_providers()"],
+            )
+        return candidates[0]
 
     def scan_source(self, **options: Any) -> Any:
         """Build the scan source, validating options against the provider contract."""
         from daft.storage.contracts import SupportsScan
 
-        provider = self.resolved.format
-        if not isinstance(provider, SupportsScan):
-            provider = self.resolved.storage
-        if not isinstance(provider, SupportsScan):
+        provider = self._provider_for(SupportsScan)
+        if provider is None:
             raise UnsupportedOperationError(
                 op="read",
-                provider=provider.info.name,
+                provider=self.provider_info.name,
                 reason="this provider does not implement scan()",
                 alternatives=[
                     "Use a read-only provider such as 'parquet' or 'csv'",
@@ -162,7 +182,14 @@ class StorageHandle:
         """
         from daft.storage.contracts import SupportsScan
 
-        provider = self.resolved.format if isinstance(self.resolved.format, SupportsScan) else self.resolved.storage
+        provider = self._provider_for(SupportsScan)
+        if provider is None:  # pragma: no cover - guarded by the same check in scan_source()
+            raise UnsupportedOperationError(
+                op="read",
+                provider=self.provider_info.name,
+                reason="no candidate provider implements scan()",
+                alternatives=["Inspect registered providers with daft.storage.list_providers()"],
+            )
         merged = {**self.options, **options}
         validated = provider.scan_options.validate(merged, provider.info.name)
         source = provider.scan(self.uri, validated)
@@ -207,11 +234,11 @@ class StorageHandle:
         """
         from daft.storage.contracts import SupportsSink
 
-        provider = self.resolved.format if isinstance(self.resolved.format, SupportsSink) else self.resolved.storage
-        if not isinstance(provider, SupportsSink):
+        provider = self._provider_for(SupportsSink)
+        if provider is None:
             raise UnsupportedOperationError(
                 op="write",
-                provider=provider.info.name,
+                provider=self.provider_info.name,
                 reason="this provider does not implement sink()",
                 alternatives=[
                     "Use a writable provider such as 'parquet' or 'csv'",
@@ -246,9 +273,10 @@ class StorageHandle:
         what the last negotiation pushed down.
         """
         info = self.provider_info
+        location = self.location if self.location is not None else "none"
         lines = [
             f"uri: {self.uri}",
-            f"location: {self.location} (source={self.resolved.location_source.value})",
+            f"location: {location} (source={self.resolved.location_source.value})",
             f"layers: {[layer.value for layer in self.resolved.layers]}",
             f"provider: {info.name} (kind={info.kind.value}, api={info.api_level.value})",
             f"capabilities: {sorted(capability.value for capability in info.capabilities)}",
